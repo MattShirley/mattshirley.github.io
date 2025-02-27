@@ -539,52 +539,275 @@ class ZeldaLikeEngine {
 
     // Create player character
     createPlayer() {
-        // Player body
-        const bodyGeometry = new THREE.CylinderGeometry(0.25, 0.25, 1, 8);
-        const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x44aa88 });
-        this.player = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        // Create a group for the entire player character
+        this.player = new THREE.Group();
         
         // Position player higher above the ground to avoid being stuck in the pathway
-        this.player.position.set(0, 1.0, 0); // Increased height from 0.5 to 1.0
-        this.player.castShadow = true;
+        this.player.position.set(0, 1.0, 0);
         this.scene.add(this.player);
-
-        // Player head
-        const headGeometry = new THREE.SphereGeometry(0.25, 16, 16);
-        const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700 });
-        const head = new THREE.Mesh(headGeometry, headMaterial);
-        head.position.y = 0.7;
+        
+        // Create a group for the actual character model
+        const characterModel = new THREE.Group();
+        
+        // DO NOT rotate the character model - leave it in its original orientation
+        // so we can control its rotation separately from the sword
+        
+        this.player.add(characterModel);
+        
+        // ----- Character Model in T-Pose -----
+        
+        // Head - slightly oval shape for cartoonish but human look
+        const headGeometry = new THREE.SphereGeometry(0.25, 12, 10);
+        // Compress slightly on Z axis for a more oval face
+        headGeometry.scale(1, 1.1, 0.9);
+        const skinMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xffe0bd,
+            roughness: 0.3,
+            metalness: 0
+        });
+        const head = new THREE.Mesh(headGeometry, skinMaterial);
+        head.position.y = 1.5; // Position at top of body
         head.castShadow = true;
-        this.player.add(head);
-
-        // Player cap
-        const capGeometry = new THREE.ConeGeometry(0.27, 0.5, 16);
-        const capMaterial = new THREE.MeshStandardMaterial({ color: 0x44aa88 });
-        const cap = new THREE.Mesh(capGeometry, capMaterial);
-        cap.position.y = 0.4;
-        cap.castShadow = true;
-        head.add(cap);
-
+        characterModel.add(head);
+        
+        // Face features
+        // Eyes
+        const eyeGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+        const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x3366cc });
+        
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(-0.1, 0.03, 0.2);
+        head.add(leftEye);
+        
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(0.1, 0.03, 0.2);
+        head.add(rightEye);
+        
+        // Eyebrows
+        const eyebrowGeometry = new THREE.BoxGeometry(0.08, 0.02, 0.02);
+        const eyebrowMaterial = new THREE.MeshStandardMaterial({ color: 0x513915 });
+        
+        const leftEyebrow = new THREE.Mesh(eyebrowGeometry, eyebrowMaterial);
+        leftEyebrow.position.set(-0.1, 0.13, 0.2);
+        leftEyebrow.rotation.z = -0.1; // Slight angle
+        head.add(leftEyebrow);
+        
+        const rightEyebrow = new THREE.Mesh(eyebrowGeometry, eyebrowMaterial);
+        rightEyebrow.position.set(0.1, 0.13, 0.2);
+        rightEyebrow.rotation.z = 0.1; // Slight angle
+        head.add(rightEyebrow);
+        
+        // Nose
+        const noseGeometry = new THREE.ConeGeometry(0.04, 0.08, 4);
+        noseGeometry.rotateX(-Math.PI / 2);
+        const nose = new THREE.Mesh(noseGeometry, skinMaterial);
+        nose.position.set(0, 0, 0.25);
+        head.add(nose);
+        
+        // Mouth - simple line
+        const mouthGeometry = new THREE.BoxGeometry(0.1, 0.02, 0.01);
+        const mouthMaterial = new THREE.MeshStandardMaterial({ color: 0x9e5343 });
+        const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+        mouth.position.set(0, -0.12, 0.2);
+        head.add(mouth);
+        
+        // Green cap
+        const capMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x228b22, // Forest green
+            roughness: 0.7,
+            metalness: 0 
+        });
+        
+        // Base of cap
+        const capBaseGeometry = new THREE.CylinderGeometry(0.27, 0.27, 0.12, 8);
+        const capBase = new THREE.Mesh(capBaseGeometry, capMaterial);
+        capBase.position.y = 0.25;
+        capBase.rotation.x = 0.1; // Tilt forward slightly
+        head.add(capBase);
+        
+        // Pointed part of cap
+        const capTopGeometry = new THREE.ConeGeometry(0.25, 0.45, 8);
+        const capTop = new THREE.Mesh(capTopGeometry, capMaterial);
+        capTop.position.set(0, 0.2, -0.05);
+        capTop.rotation.x = -0.6; // Tilt backward
+        capBase.add(capTop);
+        
+        // Torso - green tunic with slight taper
+        const tunicMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x228b22, // Same green as cap
+            roughness: 0.8,
+            metalness: 0 
+        });
+        
+        // Upper body/torso
+        const torsoGeometry = new THREE.BoxGeometry(0.5, 0.6, 0.3);
+        const torso = new THREE.Mesh(torsoGeometry, tunicMaterial);
+        torso.position.y = 1.1;
+        torso.castShadow = true;
+        characterModel.add(torso);
+        
+        // Lower tunic (skirt portion)
+        const lowerTunicGeometry = new THREE.CylinderGeometry(0.3, 0.35, 0.3, 8);
+        const lowerTunic = new THREE.Mesh(lowerTunicGeometry, tunicMaterial);
+        lowerTunic.position.y = 0.8;
+        lowerTunic.castShadow = true;
+        characterModel.add(lowerTunic);
+        
+        // Belt
+        const beltGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 8);
+        const beltMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x614126, // Dark brown
+            roughness: 0.4,
+            metalness: 0.1 
+        });
+        const belt = new THREE.Mesh(beltGeometry, beltMaterial);
+        belt.position.y = 0.95;
+        characterModel.add(belt);
+        
+        // Arms materials
+        const sleevesMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x228b22, // Green tunic
+            roughness: 0.8 
+        });
+        
+        // Left arm
+        const upperArmGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8);
+        const leftUpperArm = new THREE.Mesh(upperArmGeometry, sleevesMaterial);
+        leftUpperArm.position.set(-0.35, 1.15, 0);
+        // In T-pose, arms go straight out
+        leftUpperArm.rotation.z = Math.PI / 2;
+        leftUpperArm.castShadow = true;
+        characterModel.add(leftUpperArm);
+        
+        const forearmGeometry = new THREE.CylinderGeometry(0.07, 0.08, 0.4, 8);
+        const leftForearm = new THREE.Mesh(forearmGeometry, skinMaterial);
+        leftForearm.position.set(-0.4, 0, 0);
+        leftForearm.castShadow = true;
+        leftUpperArm.add(leftForearm);
+        
+        // Left hand
+        const handGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+        handGeometry.scale(1, 0.8, 0.5);
+        const leftHand = new THREE.Mesh(handGeometry, skinMaterial);
+        leftHand.position.set(0, -0.2, 0);
+        leftHand.castShadow = true;
+        leftForearm.add(leftHand);
+        
+        // Right arm
+        const rightUpperArm = new THREE.Mesh(upperArmGeometry, sleevesMaterial);
+        rightUpperArm.position.set(0.35, 1.15, 0);
+        // In T-pose, arms go straight out
+        rightUpperArm.rotation.z = -Math.PI / 2;
+        rightUpperArm.castShadow = true;
+        characterModel.add(rightUpperArm);
+        
+        const rightForearm = new THREE.Mesh(forearmGeometry, skinMaterial);
+        rightForearm.position.set(0.4, 0, 0);
+        rightForearm.castShadow = true;
+        rightUpperArm.add(rightForearm);
+        
+        // Right hand
+        const rightHand = new THREE.Mesh(handGeometry, skinMaterial);
+        rightHand.position.set(0, -0.2, 0);
+        rightHand.castShadow = true;
+        rightForearm.add(rightHand);
+        
+        // Legs
+        const pantsMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x614126, // Brown
+            roughness: 0.8 
+        });
+        
+        // Left leg
+        const thighGeometry = new THREE.CylinderGeometry(0.11, 0.1, 0.4, 8);
+        const leftThigh = new THREE.Mesh(thighGeometry, pantsMaterial);
+        leftThigh.position.set(-0.15, 0.6, 0);
+        leftThigh.castShadow = true;
+        characterModel.add(leftThigh);
+        
+        const calfGeometry = new THREE.CylinderGeometry(0.09, 0.08, 0.4, 8);
+        const leftCalf = new THREE.Mesh(calfGeometry, pantsMaterial);
+        leftCalf.position.y = -0.4;
+        leftCalf.castShadow = true;
+        leftThigh.add(leftCalf);
+        
+        // Left boot
+        const bootGeometry = new THREE.BoxGeometry(0.14, 0.1, 0.2);
+        const bootMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3d2314, // Dark brown
+            roughness: 0.5,
+            metalness: 0.1 
+        });
+        const leftBoot = new THREE.Mesh(bootGeometry, bootMaterial);
+        leftBoot.position.set(0, -0.25, 0.05);
+        leftBoot.castShadow = true;
+        leftCalf.add(leftBoot);
+        
+        // Right leg
+        const rightThigh = new THREE.Mesh(thighGeometry, pantsMaterial);
+        rightThigh.position.set(0.15, 0.6, 0);
+        rightThigh.castShadow = true;
+        characterModel.add(rightThigh);
+        
+        const rightCalf = new THREE.Mesh(calfGeometry, pantsMaterial);
+        rightCalf.position.y = -0.4;
+        rightCalf.castShadow = true;
+        rightThigh.add(rightCalf);
+        
+        // Right boot
+        const rightBoot = new THREE.Mesh(bootGeometry, bootMaterial);
+        rightBoot.position.set(0, -0.25, 0.05);
+        rightBoot.castShadow = true;
+        rightCalf.add(rightBoot);
+        
+        // ----- End Character Model -----
+        
         // Create a sword holder object to make rotation easier
         this.swordHolder = new THREE.Object3D();
-        this.swordHolder.position.set(0, 0, 0); // Center in player's body
+        this.swordHolder.position.set(0, 1.1, 0); // Position at center of player torso
+        
+        // In Zelda games, the sword is held on the character's back or at their side
+        // and points in the same direction the character is facing
+        
         this.player.add(this.swordHolder);
         
-        // Player sword - now attached to the sword holder
-        const swordGeometry = new THREE.BoxGeometry(0.05, 0.6, 0.05);
-        const swordMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-        this.sword = new THREE.Mesh(swordGeometry, swordMaterial);
-        // Position the sword in front of the player rather than to the side
-        this.sword.position.set(0, 0, -0.4); 
-        this.sword.rotation.x = Math.PI / 2; // Point sword forward
+        // Create a better-looking sword with blade and hilt
+        // Blade
+        const swordBladeGeometry = new THREE.BoxGeometry(0.05, 0.6, 0.1);
+        const swordMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xcccccc,
+            roughness: 0.2,
+            metalness: 0.8 
+        });
+        this.sword = new THREE.Mesh(swordBladeGeometry, swordMaterial);
+        // Position the sword to point forward
+        // This makes it point in the same direction as the character's face
+        this.sword.position.set(0, 0, 0.4); // Move forward (positive Z is forward)
+        this.sword.rotation.x = -Math.PI / 2; // Point sword forward
         this.swordHolder.add(this.sword);
-
+        
         // Sword handle
-        const handleGeometry = new THREE.BoxGeometry(0.08, 0.15, 0.08);
-        const handleMaterial = new THREE.MeshStandardMaterial({ color: 0x654321 });
+        const handleGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.2, 8);
+        const handleMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x3d2314, // Dark brown
+            roughness: 0.7,
+            metalness: 0.1
+        });
         const handle = new THREE.Mesh(handleGeometry, handleMaterial);
-        handle.position.y = -0.35;
+        handle.position.y = -0.4;
+        handle.rotation.x = Math.PI / 2;
         this.sword.add(handle);
+        
+        // Sword hilt
+        const hiltGeometry = new THREE.BoxGeometry(0.15, 0.03, 0.04);
+        const hiltMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xd4af37, // Gold
+            roughness: 0.3,
+            metalness: 0.9
+        });
+        const hilt = new THREE.Mesh(hiltGeometry, hiltMaterial);
+        hilt.position.y = -0.3;
+        this.sword.add(hilt);
         
         // Add debug helper to visualize attack hitbox
         if (this.debugMode) {
@@ -596,22 +819,51 @@ class ZeldaLikeEngine {
                 wireframe: true
             });
             this.attackHitbox = new THREE.Mesh(hitboxGeometry, hitboxMaterial);
-            this.attackHitbox.position.set(0, 0, -1.0); // Position in front of player
+            this.attackHitbox.position.set(0, 0, 1.0); // Position in front of player (positive Z)
             this.player.add(this.attackHitbox);
         }
 
-        // Create a shield holder for better positioning
+        // Create a shield holder
         this.shieldHolder = new THREE.Object3D();
-        this.shieldHolder.position.set(0, 0, 0);
+        this.shieldHolder.position.set(0, 1.1, 0); // Position at center of torso
         this.player.add(this.shieldHolder);
         
-        // Player shield - now attached to the shield holder
-        const shieldGeometry = new THREE.BoxGeometry(0.1, 0.4, 0.4);
-        const shieldMaterial = new THREE.MeshStandardMaterial({ color: 0x0000aa });
-        const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
+        // Create a better shield with emblem
+        const shieldBaseGeometry = new THREE.BoxGeometry(0.05, 0.5, 0.4);
+        // Taper the shield slightly with a custom shape
+        for (let i = 0; i < shieldBaseGeometry.attributes.position.count; i++) {
+            const y = shieldBaseGeometry.attributes.position.getY(i);
+            if (y < 0) { // Lower part of shield
+                const factor = 1 + (y * 0.5); // Taper more at bottom
+                shieldBaseGeometry.attributes.position.setZ(
+                    i, 
+                    shieldBaseGeometry.attributes.position.getZ(i) * factor
+                );
+            }
+        }
+        
+        const shieldMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x244985, // Dark blue
+            roughness: 0.4,
+            metalness: 0.3 
+        });
+        const shield = new THREE.Mesh(shieldBaseGeometry, shieldMaterial);
         shield.position.set(-0.3, 0, 0); // Position on the left side
         this.shieldHolder.add(shield);
-
+        
+        // Shield emblem
+        const emblemGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.02, 3);
+        const emblemMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xd4af37, // Gold
+            roughness: 0.2,
+            metalness: 0.8 
+        });
+        const emblem = new THREE.Mesh(emblemGeometry, emblemMaterial);
+        emblem.position.z = 0.2;
+        emblem.position.y = 0.1;
+        emblem.rotation.x = Math.PI / 2;
+        shield.add(emblem);
+        
         // Player properties
         this.player.velocity = new THREE.Vector3(0, 0, 0);
         this.player.onGround = true;
@@ -621,6 +873,12 @@ class ZeldaLikeEngine {
         this.player.isAttacking = false;
         this.player.radius = 0.3; // For collision detection
 
+        // Store references to limbs for animations
+        this.player.leftArm = leftUpperArm;
+        this.player.rightArm = rightUpperArm;
+        this.player.leftLeg = leftThigh;
+        this.player.rightLeg = rightThigh;
+        
         // Camera target (slightly above player's head)
         this.cameraTarget = new THREE.Object3D();
         this.cameraTarget.position.y = 2;
@@ -669,29 +927,45 @@ class ZeldaLikeEngine {
         }
     }
 
-    // Create enemy
+    // Create enemy - enhanced version with animated legs
     createEnemy(x, y, z) {
-        const enemyGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-        const enemyMaterial = new THREE.MeshStandardMaterial({ color: 0xaa0000 });
-        const enemy = new THREE.Mesh(enemyGeometry, enemyMaterial);
-        enemy.position.set(x, y + 0.5, z);
-        enemy.castShadow = true;
+        // Create a group for the entire enemy
+        const enemy = new THREE.Group();
+        enemy.position.set(x, y + 0.8, z); // Raised a bit to account for legs
+        
+        // Add a default health value (used to track damage)
+        enemy.health = 2; // Takes 2 hits to kill
+        
+        // Main body
+        const bodyGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+        const bodyMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xaa0000,
+            roughness: 0.7,
+            metalness: 0.2
+        });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.castShadow = true;
+        enemy.add(body);
 
         // Enemy eyes
         const eyeGeometry = new THREE.SphereGeometry(0.1, 8, 8);
         const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
 
         const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        leftEye.position.set(-0.2, 0.15, -0.35);
-        enemy.add(leftEye);
+        leftEye.position.set(-0.22, 0.15, -0.35);
+        body.add(leftEye);
 
         const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        rightEye.position.set(0.2, 0.15, -0.35);
-        enemy.add(rightEye);
+        rightEye.position.set(0.22, 0.15, -0.35);
+        body.add(rightEye);
 
-        // Pupil
+        // Pupils with improved look
         const pupilGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-        const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        const pupilMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x000000,
+            roughness: 0.1,
+            metalness: 0.1
+        });
 
         const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
         leftPupil.position.z = -0.05;
@@ -700,9 +974,85 @@ class ZeldaLikeEngine {
         const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
         rightPupil.position.z = -0.05;
         rightEye.add(rightPupil);
+        
+        // Add a mouth
+        const mouthGeometry = new THREE.SphereGeometry(0.15, 16, 8);
+        // Cut the sphere in half for a mouth shape
+        for (let i = 0; i < mouthGeometry.attributes.position.count; i++) {
+            const y = mouthGeometry.attributes.position.getY(i);
+            if (y > 0) {
+                mouthGeometry.attributes.position.setY(i, y * 0.3);
+            }
+        }
+        
+        const mouthMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x000000,
+            roughness: 0.2 
+        });
+        const mouth = new THREE.Mesh(mouthGeometry, mouthMaterial);
+        mouth.position.set(0, -0.15, -0.35);
+        mouth.rotation.x = Math.PI / 5; // Tilt slightly
+        body.add(mouth);
+        
+        // Add teeth
+        const toothGeometry = new THREE.BoxGeometry(0.07, 0.07, 0.07);
+        const toothMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xffffff,
+            roughness: 0.3 
+        });
+        
+        const leftTooth = new THREE.Mesh(toothGeometry, toothMaterial);
+        leftTooth.position.set(-0.08, 0.03, 0.05);
+        mouth.add(leftTooth);
+        
+        const rightTooth = new THREE.Mesh(toothGeometry, toothMaterial);
+        rightTooth.position.set(0.08, 0.03, 0.05);
+        mouth.add(rightTooth);
+        
+        // Add spherical legs
+        const legGeometry = new THREE.SphereGeometry(0.15, 12, 12);
+        const legMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x880000, // Slightly darker than body
+            roughness: 0.8 
+        });
+        
+        const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+        leftLeg.position.set(-0.3, -0.6, 0);
+        leftLeg.castShadow = true;
+        body.add(leftLeg);
+        
+        const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+        rightLeg.position.set(0.3, -0.6, 0);
+        rightLeg.castShadow = true;
+        body.add(rightLeg);
+        
+        // Add horns for a more menacing look
+        const hornGeometry = new THREE.ConeGeometry(0.1, 0.25, 8);
+        const hornMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x880000,
+            roughness: 0.7
+        });
+        
+        const leftHorn = new THREE.Mesh(hornGeometry, hornMaterial);
+        leftHorn.position.set(-0.25, 0.4, -0.1);
+        leftHorn.rotation.x = -Math.PI / 6;
+        leftHorn.rotation.z = -Math.PI / 6;
+        body.add(leftHorn);
+        
+        const rightHorn = new THREE.Mesh(hornGeometry, hornMaterial);
+        rightHorn.position.set(0.25, 0.4, -0.1);
+        rightHorn.rotation.x = -Math.PI / 6;
+        rightHorn.rotation.z = Math.PI / 6;
+        body.add(rightHorn);
 
+        // Store references to animate legs
+        enemy.body = body;
+        enemy.leftLeg = leftLeg;
+        enemy.rightLeg = rightLeg;
+        enemy.walkTime = 0; // For animation timing
+        
         // Enemy properties
-        enemy.health = 2;
+        // Note: health is now set at creation time above
         enemy.speed = 2;
         enemy.attackRange = 1.5;
         enemy.type = 'enemy';
@@ -988,22 +1338,17 @@ class ZeldaLikeEngine {
 
         // If target locked, ensure we're facing the enemy before attacking
         if (this.targetLocked && this.currentTarget) {
-            // When locked on, face away from the enemy
+            // When locked on in Ocarina of Time, Link always faces the enemy
             const targetDirection = new THREE.Vector3()
                 .subVectors(this.currentTarget.position, this.player.position)
                 .normalize();
             targetDirection.y = 0; // Keep on horizontal plane
             
-            // Invert direction (face 180 degrees away)
-            const invertedDirection = targetDirection.clone().multiplyScalar(-1);
+            // Face TOWARD the target (just like Link does when Z-targeting)
+            const lookAtPosition = this.player.position.clone().add(targetDirection);
+            this.player.lookAt(lookAtPosition);
             
-            // Look away from target
-            const targetPosition = new THREE.Vector3()
-                .copy(this.player.position)
-                .add(invertedDirection);
-            this.player.lookAt(targetPosition);
-            
-            console.log("Attacking while locked on target - facing away");
+            console.log("Attacking while locked on target - character facing toward target");
         }
 
         // Store initial sword position and rotation
@@ -1021,7 +1366,7 @@ class ZeldaLikeEngine {
         this.createSwordTrail();
         
         // Determine attack direction vector (directly in front of player)
-        const attackDirection = new THREE.Vector3(0, 0, -1);
+        const attackDirection = new THREE.Vector3(0, 0, 1);
         attackDirection.applyQuaternion(this.player.quaternion);
         
         // Calculate attack position - exactly where the sword will strike
@@ -1052,7 +1397,7 @@ class ZeldaLikeEngine {
                     .normalize();
                 toEnemy.y = 0; // Keep on horizontal plane
                 
-                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.player.quaternion);
+                const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.player.quaternion);
                 const angleToEnemy = forward.angleTo(toEnemy);
                 
                 // Check if enemy is in front of player (within 45 degrees) and in range
@@ -1062,7 +1407,8 @@ class ZeldaLikeEngine {
                 console.log(`Enemy distance: ${distanceToEnemy.toFixed(2)}, angle: ${(angleToEnemy * 180 / Math.PI).toFixed(2)}°`);
                 
                 // Calculate if sword can hit enemy - better aligned with visual cues
-                const swordTip = new THREE.Vector3(0, 0, -1.5).applyQuaternion(this.player.quaternion).add(this.player.position);
+                // Use positive Z since the sword now points forward with the character
+                const swordTip = new THREE.Vector3(0, 0, 1.5).applyQuaternion(this.player.quaternion).add(this.player.position);
                 const swordDistance = enemy.position.distanceTo(swordTip);
                 console.log(`Sword tip distance to enemy: ${swordDistance.toFixed(2)}`);
                 
@@ -1077,46 +1423,66 @@ class ZeldaLikeEngine {
                     enemy.health -= 1;
                     hitEnemies.push(enemy);
 
-                    // Enemy knockback
+                    // Enemy knockback - keep it on the horizontal plane to avoid falling through the ground
                     const knockbackDirection = new THREE.Vector3()
                         .subVectors(enemy.position, this.player.position)
-                        .normalize()
-                        .multiplyScalar(1);
+                        .normalize();
+                    
+                    // Ensure knockback is only horizontal (no Y component)
+                    knockbackDirection.y = 0;
+                    knockbackDirection.multiplyScalar(1);
 
-                    enemy.position.add(knockbackDirection);
+                    // Apply knockback on horizontal plane only
+                    enemy.position.x += knockbackDirection.x;
+                    enemy.position.z += knockbackDirection.z;
+                    
+                    // Ensure enemy stays at proper height
+                    enemy.position.y = Math.max(enemy.position.y, 0.8); // Minimum height to prevent falling
 
                     // ENHANCED: Visual feedback for hit at the actual hit location
                     const hitLocation = enemy.position.clone().sub(knockbackDirection.multiplyScalar(0.3));
                     this.createHitEffect(hitLocation);
 
-                    // Flash enemy red
-                    const originalColor = enemy.material.color.clone();
-                    enemy.material.color.set(0xFF0000);
-                    setTimeout(() => {
-                        if (enemy.parent) { // Check if enemy still exists
-                            enemy.material.color.copy(originalColor);
-                        }
-                    }, 200);
+                    // Flash enemy red - find the body which has the material
+                    if (enemy.body && enemy.body.material) {
+                        const originalColor = enemy.body.material.color.clone();
+                        enemy.body.material.color.set(0xFF0000);
+                        setTimeout(() => {
+                            if (enemy.parent && enemy.body) { // Check if enemy still exists
+                                enemy.body.material.color.copy(originalColor);
+                            }
+                        }, 200);
+                    }
 
-                    // Check if enemy is defeated
+                    // Check if enemy is defeated - make sure health can't go below 0
+                    enemy.health = Math.max(0, enemy.health);
+                    
                     if (enemy.health <= 0) {
+                        console.log("Enemy defeated!");
+                        
                         // ENHANCED: Create death effect
                         this.createDeathEffect(enemy.position);
 
-                        this.scene.remove(enemy);
+                        // Wait a moment for the death effect before removing
+                        setTimeout(() => {
+                            // Double-check the enemy still exists and isn't already removed
+                            if (enemy && enemy.parent) {
+                                this.scene.remove(enemy);
+                            }
 
-                        // Remove from enemies array
-                        const index = this.enemies.indexOf(enemy);
-                        if (index > -1) {
-                            this.enemies.splice(index, 1);
-                        }
+                            // Remove from enemies array
+                            const index = this.enemies.indexOf(enemy);
+                            if (index > -1) {
+                                this.enemies.splice(index, 1);
+                            }
 
-                        // Remove as target if targeted
-                        if (this.currentTarget === enemy) {
-                            this.currentTarget = null;
-                            this.targetLocked = false;
-                            this.reticle.style.display = 'none';
-                        }
+                            // Remove as target if targeted
+                            if (this.currentTarget === enemy) {
+                                this.currentTarget = null;
+                                this.targetLocked = false;
+                                this.reticle.style.display = 'none';
+                            }
+                        }, 100);
                     }
                 }
             });
@@ -1164,7 +1530,7 @@ class ZeldaLikeEngine {
     // ENHANCED: Create sword trail effect
     createSwordTrail() {
         // Get sword tip position in world space - now at the end of sword
-        const swordTip = new THREE.Vector3(0, 0, -0.7); // End of sword
+        const swordTip = new THREE.Vector3(0, 0, 0.7); // End of sword (positive Z)
         this.sword.localToWorld(swordTip);
 
         // Create sword trail geometry
@@ -1172,7 +1538,7 @@ class ZeldaLikeEngine {
         const vertices = [];
 
         // Get player's forward direction
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.player.quaternion);
+        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.player.quaternion);
         
         // Get perpendicular vector to create the arc of the sword swing
         const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.player.quaternion);
@@ -1492,7 +1858,7 @@ class ZeldaLikeEngine {
         }
     }
 
-    // Update enemies
+    // Update enemies with animation
     updateEnemies(deltaTime) {
         this.enemies.forEach(enemy => {
             // Get distance to player
@@ -1510,7 +1876,13 @@ class ZeldaLikeEngine {
                     direction.y = 0;
 
                     const movement = direction.multiplyScalar(enemy.speed * deltaTime);
-                    enemy.position.add(movement);
+                    
+                    // Apply movement on horizontal plane only
+                    enemy.position.x += movement.x;
+                    enemy.position.z += movement.z;
+                    
+                    // Ensure enemy stays at proper height
+                    enemy.position.y = Math.max(enemy.position.y, 0.8);
 
                     // Face the player
                     const lookPos = new THREE.Vector3(
@@ -1519,26 +1891,128 @@ class ZeldaLikeEngine {
                         this.player.position.z
                     );
                     enemy.lookAt(lookPos);
+                    
+                    // Animate legs when moving
+                    if (enemy.leftLeg && enemy.rightLeg) {
+                        // Update animation time
+                        enemy.walkTime += deltaTime * 5; // Control animation speed
+                        
+                        // Create a shuffling animation by moving legs up and down in alternating pattern
+                        const leftLegHeight = Math.sin(enemy.walkTime) * 0.2;
+                        const rightLegHeight = Math.sin(enemy.walkTime + Math.PI) * 0.2; // Opposite phase
+                        
+                        // Apply leg movement
+                        enemy.leftLeg.position.y = -0.6 + leftLegHeight;
+                        enemy.rightLeg.position.y = -0.6 + rightLegHeight;
+                        
+                        // Add slight side-to-side motion for leg shuffling effect
+                        const sideSway = Math.sin(enemy.walkTime) * 0.05;
+                        enemy.leftLeg.position.x = -0.3 - sideSway;
+                        enemy.rightLeg.position.x = 0.3 + sideSway;
+                        
+                        // Small bounce effect for the whole body
+                        if (enemy.body) {
+                            enemy.body.position.y = Math.abs(Math.sin(enemy.walkTime * 2)) * 0.05;
+                        }
+                    }
                 } else {
                     // Attack player if in range and cooldown is over
                     const currentTime = this.clock.getElapsedTime();
                     if (currentTime - enemy.lastAttackTime > enemy.attackCooldown) {
                         this.playerTakeDamage(1);
                         enemy.lastAttackTime = currentTime;
+                        
+                        // Animate attack by moving forward slightly
+                        if (enemy.body) {
+                            const attackDirection = new THREE.Vector3()
+                                .subVectors(this.player.position, enemy.position)
+                                .normalize()
+                                .multiplyScalar(0.2);
+                            
+                            // Quick forward lunge animation
+                            const startPosition = enemy.body.position.clone();
+                            const endPosition = startPosition.clone().add(attackDirection);
+                            
+                            // Create a simple animation sequence
+                            const animateAttack = (progress) => {
+                                if (progress < 0.5) {
+                                    // Move forward
+                                    const t = progress * 2; // Scale to 0-1 for first half
+                                    enemy.body.position.copy(startPosition).lerp(endPosition, this.easeOutQuad(t));
+                                } else {
+                                    // Move back
+                                    const t = (progress - 0.5) * 2; // Scale to 0-1 for second half
+                                    enemy.body.position.copy(endPosition).lerp(startPosition, this.easeInQuad(t));
+                                }
+                                
+                                if (progress < 1) {
+                                    setTimeout(() => animateAttack(progress + 0.1), 20);
+                                }
+                            };
+                            
+                            animateAttack(0);
+                        }
+                    }
+                    
+                    // Keep legs in place when not moving
+                    if (enemy.leftLeg && enemy.rightLeg) {
+                        enemy.leftLeg.position.y = -0.6;
+                        enemy.rightLeg.position.y = -0.6;
+                        enemy.leftLeg.position.x = -0.3;
+                        enemy.rightLeg.position.x = 0.3;
                     }
                 }
             } else {
                 enemy.aggro = false;
+                
+                // Reset leg positions when not aggro
+                if (enemy.leftLeg && enemy.rightLeg) {
+                    enemy.leftLeg.position.y = -0.6;
+                    enemy.rightLeg.position.y = -0.6;
+                    enemy.leftLeg.position.x = -0.3;
+                    enemy.rightLeg.position.x = 0.3;
+                    
+                    if (enemy.body) {
+                        enemy.body.position.y = 0;
+                    }
+                }
             }
 
             // Update enemy eyes to look at player
-            if (enemy.aggro) {
-                enemy.children.forEach(child => {
-                    if (child.children.length > 0) {
+            if (enemy.aggro && enemy.body) {
+                // Make the entire body face the player first
+                const lookPos = new THREE.Vector3(
+                    this.player.position.x,
+                    enemy.position.y,
+                    this.player.position.z
+                );
+                enemy.lookAt(lookPos);
+                
+                // Then fine-tune eye tracking
+                enemy.body.children.forEach(child => {
+                    if (child.children.length > 0 && child.name !== "mouth") {
                         child.lookAt(this.player.position);
                     }
                 });
+                
+                // Add an "alert" behavior when first spotting the player
+                if (!enemy.wasAggro && enemy.aggro) {
+                    // Flash the eyes red briefly
+                    const eyes = enemy.body.children.filter(c => c.children.length > 0);
+                    eyes.forEach(eye => {
+                        const originalColor = eye.material.color.clone();
+                        eye.material.color.set(0xff0000);
+                        setTimeout(() => {
+                            if (eye.material) { // Check if enemy still exists
+                                eye.material.color.copy(originalColor);
+                            }
+                        }, 300);
+                    });
+                }
             }
+            
+            // Track aggro state changes
+            enemy.wasAggro = enemy.aggro;
         });
     }
 
@@ -1606,7 +2080,7 @@ class ZeldaLikeEngine {
         });
     }
 
-    // ENHANCED: Update player movement and physics with collision detection
+    // ENHANCED: Update player movement and physics with collision detection and animations
     updatePlayer(deltaTime) {
         if (!this.player) return;
 
@@ -1620,33 +2094,33 @@ class ZeldaLikeEngine {
         let forward = new THREE.Vector3(0, 0, -1);
         let right = new THREE.Vector3(1, 0, 0);
         
-        // Always keep the player facing away from the target when locked
+        // Determine movement directions based on target lock state
         if (this.targetLocked && this.currentTarget) {
-            // Get direction to the target
+            // ===== TARGET LOCKED MODE =====
+            // Get direction vector to the target
             const targetDirection = new THREE.Vector3()
                 .subVectors(this.currentTarget.position, this.player.position)
                 .normalize();
-            targetDirection.y = 0; // Ensure we're only rotating on the horizontal plane
+            targetDirection.y = 0; // Keep on horizontal plane
             
-            // Invert the direction - player faces away from target
-            const invertedDirection = targetDirection.clone().multiplyScalar(-1);
+            // In target lock mode:
+            // - "forward" means "move toward the target" 
+            // - "backward" means "move away from the target"
+            forward = targetDirection.clone();
             
-            // Set player rotation to face away from target
-            const targetPosition = new THREE.Vector3()
-                .copy(this.player.position)
-                .add(invertedDirection);
-            this.player.lookAt(targetPosition);
+            // Calculate right direction perpendicular to forward
+            right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
             
-            // IMPORTANT: For movement, we still want "forward" to mean "toward the target"
-            // and "backward" to mean "away from the target", even though the player
-            // is visually facing away
-            forward = targetDirection.clone(); // Forward means toward the target
-            right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+            // In Ocarina of Time's target lock (Z-targeting):
+            // The character always faces TOWARD the target
+            // This allows the player to circle-strafe while maintaining focus on the enemy
+            const lookAtTarget = this.player.position.clone().add(targetDirection);
             
-            // Debug message
-            console.log("Target locked, player facing away but forward controls go toward target");
+            // Set player rotation to face directly at the target
+            this.player.lookAt(lookAtTarget);
         } else {
-            // Apply the camera's Y rotation to the movement directions when not target locked
+            // ===== FREE MOVEMENT MODE =====
+            // Movement directions aligned with camera view
             forward.applyEuler(new THREE.Euler(0, this.mouseControls.cameraRotation.y, 0));
             right.applyEuler(new THREE.Euler(0, this.mouseControls.cameraRotation.y, 0));
         }
@@ -1657,15 +2131,72 @@ class ZeldaLikeEngine {
         if (this.keys.right) playerDirection.add(right);
         if (this.keys.left) playerDirection.sub(right);
 
-        // Add subtle bobbing effect when walking
+        // Add subtle bobbing effect and animate limbs when walking
         if (playerDirection.length() > 0) {
+            // Update walk animation time
             this.player.userData.walkTime = (this.player.userData.walkTime || 0) + deltaTime * 5;
-            const bobHeight = Math.sin(this.player.userData.walkTime) * 0.03;
+            const walkTime = this.player.userData.walkTime;
+            
+            // Animate limbs if references exist
+            if (this.player.leftLeg && this.player.rightLeg) {
+                // Leg swing animation
+                const legSwing = Math.PI/8; // Maximum swing angle
+                
+                // Legs move in opposite phases
+                this.player.leftLeg.rotation.x = Math.sin(walkTime) * legSwing;
+                this.player.rightLeg.rotation.x = Math.sin(walkTime + Math.PI) * legSwing;
+                
+                // Arm swing animation (opposite to legs for natural walk)
+                if (this.player.leftArm && this.player.rightArm) {
+                    const armSwing = Math.PI/10; // Arm swing angle
+                    
+                    // Store original rotations if not already stored
+                    if (this.player.leftArm.userData.originalRotation === undefined) {
+                        this.player.leftArm.userData.originalRotation = this.player.leftArm.rotation.z;
+                        this.player.rightArm.userData.originalRotation = this.player.rightArm.rotation.z;
+                    }
+                    
+                    // Arms swing opposite to legs for natural walking
+                    const leftArmOriginal = this.player.leftArm.userData.originalRotation;
+                    const rightArmOriginal = this.player.rightArm.userData.originalRotation;
+                    
+                    this.player.leftArm.rotation.x = Math.sin(walkTime + Math.PI) * armSwing;
+                    this.player.rightArm.rotation.x = Math.sin(walkTime) * armSwing;
+                    
+                    // Maintain original side position
+                    this.player.leftArm.rotation.z = leftArmOriginal;
+                    this.player.rightArm.rotation.z = rightArmOriginal;
+                }
+            }
+            
+            // Subtle body bob
+            const bobHeight = Math.sin(walkTime * 2) * 0.03; // Doubled frequency for realistic gait
+            
+            // Apply bob to character's children (head, etc.)
             this.player.children.forEach(child => {
-                if (child.position.y > 0) { // Head bobbing
-                    child.position.y = 0.7 + bobHeight;
+                if (child.position.y > 0.5 && !(child === this.swordHolder || child === this.shieldHolder)) {
+                    // Only bob non-weapon parts
+                    child.position.y = child.userData.originalY || child.position.y;
+                    child.position.y += bobHeight;
                 }
             });
+        } else {
+            // Reset animations when not moving
+            if (this.player.leftLeg && this.player.rightLeg) {
+                this.player.leftLeg.rotation.x = 0;
+                this.player.rightLeg.rotation.x = 0;
+                
+                if (this.player.leftArm && this.player.rightArm) {
+                    this.player.leftArm.rotation.x = 0;
+                    this.player.rightArm.rotation.x = 0;
+                    
+                    // Restore original arm positions (T-pose)
+                    if (this.player.leftArm.userData.originalRotation !== undefined) {
+                        this.player.leftArm.rotation.z = this.player.leftArm.userData.originalRotation;
+                        this.player.rightArm.rotation.z = this.player.rightArm.userData.originalRotation;
+                    }
+                }
+            }
         }
 
         // Normalize movement vector and apply velocity
@@ -1678,24 +2209,17 @@ class ZeldaLikeEngine {
             // Calculate new position
             const newPosition = this.player.position.clone().add(playerDirection);
 
-            // Debug movement attempts
-            console.log("Attempting to move from", this.player.position, "to", newPosition);
-
             // Check for collisions before applying movement
             if (!this.checkCollision(newPosition)) {
                 // No collision, move freely
                 this.player.position.copy(newPosition);
-                console.log("Movement successful - no collision");
             } else {
-                console.log("Collision detected, trying to slide");
-                
                 // Try sliding along X axis first
                 const slideX = this.player.position.clone();
                 slideX.x = newPosition.x;
 
                 if (!this.checkCollision(slideX)) {
                     this.player.position.copy(slideX);
-                    console.log("Sliding along X axis");
                 } else {
                     // Try sliding along Z axis if X failed
                     const slideZ = this.player.position.clone();
@@ -1703,40 +2227,34 @@ class ZeldaLikeEngine {
 
                     if (!this.checkCollision(slideZ)) {
                         this.player.position.copy(slideZ);
-                        console.log("Sliding along Z axis");
                     } else {
-                        console.log("Movement blocked in all directions");
-                        
                         // Try to step over small obstacles
                         const elevatedPosition = newPosition.clone();
                         elevatedPosition.y += 0.1; // Try slightly higher
                         
                         if (!this.checkCollision(elevatedPosition)) {
                             this.player.position.copy(elevatedPosition);
-                            console.log("Stepping over obstacle");
                         }
                     }
                 }
             }
 
-            // Rotate player to face movement direction ONLY if not target locked
+            // Handle player orientation
             if (!this.targetLocked) {
-                // Calculate the direction the camera is facing but on horizontal plane
-                const cameraForward = new THREE.Vector3(0, 0, -1);
-                cameraForward.applyEuler(new THREE.Euler(0, this.mouseControls.cameraRotation.y, 0));
-                cameraForward.y = 0;
-                cameraForward.normalize();
+                // In Ocarina of Time, the character always faces in the direction they're moving
+                const moveDir = playerDirection.clone().normalize();
                 
-                // For correct sword orientation, we need to look in the opposite direction of movement
-                const lookAt = new THREE.Vector3();
-                lookAt.copy(this.player.position).sub(playerDirection);
-                this.player.lookAt(lookAt);
-                
-                // Debug
-                console.log("Regular movement, facing opposite of movement direction");
+                // Face IN the direction of movement (just like in Zelda OoT)
+                // If moving forward (W), character faces FORWARD (away from camera)
+                // If moving backward (S), character faces BACKWARD (toward camera)
+                // If moving left (A), character faces LEFT
+                // If moving right (D), character faces RIGHT
+                const moveTarget = this.player.position.clone().add(moveDir);
+                this.player.lookAt(moveTarget);
             }
+            // In target-locked mode, orientation was already set above
 
-            // ENHANCED: Add footstep effect when moving
+            // Add footstep effect when moving
             this.player.userData.lastStepTime = this.player.userData.lastStepTime || 0;
             this.player.userData.stepInterval = 0.3; // seconds between footsteps
 
@@ -1747,20 +2265,6 @@ class ZeldaLikeEngine {
                     this.player.userData.lastStepTime = performance.now() / 1000;
                 }
             }
-        } else if (this.targetLocked && this.currentTarget) {
-            // If we're not moving but target is locked, keep facing away from the target
-            const targetDirection = new THREE.Vector3()
-                .subVectors(this.currentTarget.position, this.player.position)
-                .normalize();
-            targetDirection.y = 0;
-            
-            // Face away from target (180 degree rotation)
-            const invertedDirection = targetDirection.clone().multiplyScalar(-1);
-            
-            const targetPosition = new THREE.Vector3()
-                .copy(this.player.position)
-                .add(invertedDirection);
-            this.player.lookAt(targetPosition);
         }
 
         // Handle jumping
