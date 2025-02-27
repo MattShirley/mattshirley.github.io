@@ -19,9 +19,14 @@ class ZeldaLikeEngine {
         this.maxHealth = 3;
         this.enemies = [];
         this.interactables = [];
+        this.collidables = []; // NEW: Array to track objects the player can collide with
         this.targetLocked = false;
         this.currentTarget = null;
         this.reticle = document.getElementById('target-reticle');
+        
+        // Debug mode - set to true to visualize collisions
+        this.debugMode = true;
+        this.debugObjects = [];
 
         // Setup
         this.setupThree();
@@ -59,6 +64,7 @@ class ZeldaLikeEngine {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(this.width, this.height);
         this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // ENHANCED: Better shadows
         this.container.appendChild(this.renderer.domElement);
 
         // Create clock for animations
@@ -74,7 +80,8 @@ class ZeldaLikeEngine {
             right: false,
             jump: false,
             interact: false,
-            targetLock: false
+            targetLock: false,
+            reset: false
         };
 
         // Mouse control variables
@@ -89,6 +96,13 @@ class ZeldaLikeEngine {
             maxPolarAngle: Math.PI / 1.8 // Radians - Prevent looking too far down
         };
 
+        // Helper method to toggle debug visuals
+        this.toggleDebugVisuals = () => {
+            this.debugObjects.forEach(obj => {
+                obj.visible = this.debugMode;
+            });
+        };
+
         // Keyboard controls
         document.addEventListener('keydown', (e) => {
             switch (e.key.toLowerCase()) {
@@ -99,6 +113,14 @@ class ZeldaLikeEngine {
                 case ' ': this.keys.jump = true; break;
                 case 'e': this.keys.interact = true; this.checkInteraction(); break;
                 case 'f': this.toggleTargetLock(); break;
+                case 'r': this.resetPlayerPosition(); break;  // Add emergency reset
+                
+                // Add debug toggle
+                case '0': 
+                    this.debugMode = !this.debugMode; 
+                    console.log("Debug mode:", this.debugMode);
+                    this.toggleDebugVisuals();
+                    break;
             }
         });
 
@@ -174,8 +196,12 @@ class ZeldaLikeEngine {
     // Setup lighting
     setupLighting() {
         // Ambient light
-        const ambientLight = new THREE.AmbientLight(0xcccccc, 0.4);
+        const ambientLight = new THREE.AmbientLight(0xcccccc, 0.3);
         this.scene.add(ambientLight);
+
+        // ENHANCED: Add hemisphere light for better environmental lighting
+        const hemisphereLight = new THREE.HemisphereLight(0x87CEEB, 0x567d46, 0.3);
+        this.scene.add(hemisphereLight);
 
         // Directional light (sun)
         this.sunLight = new THREE.DirectionalLight(0xffffcc, 0.8);
@@ -191,6 +217,7 @@ class ZeldaLikeEngine {
         this.sunLight.shadow.camera.right = 20;
         this.sunLight.shadow.camera.top = 20;
         this.sunLight.shadow.camera.bottom = -20;
+        this.sunLight.shadow.bias = -0.0005; // ENHANCED: Reduce shadow acne
 
         this.scene.add(this.sunLight);
     }
@@ -250,7 +277,25 @@ class ZeldaLikeEngine {
         this.updateLoadingProgress(5);
 
         // Ground
-        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundGeometry = new THREE.PlaneGeometry(100, 100, 40, 40); // ENHANCED: More segments for detail
+
+        // ENHANCED: Add slight terrain variation
+        const vertices = groundGeometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const z = vertices[i + 2];
+
+            // Keep the center area flat for gameplay
+            const distFromCenter = Math.sqrt(x * x + z * z);
+            if (distFromCenter > 10) {
+                // Add subtle elevation
+                vertices[i + 1] = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 0.5;
+            }
+        }
+
+        // Update normals for proper lighting
+        groundGeometry.computeVertexNormals();
+
         const groundMaterial = new THREE.MeshStandardMaterial({
             color: 0x567d46,
             roughness: 0.8,
@@ -258,8 +303,16 @@ class ZeldaLikeEngine {
         });
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.3; // Lower the ground to avoid collision with player
         ground.receiveShadow = true;
         this.scene.add(ground);
+
+        // ENHANCED: Add grid for better orientation
+        const gridHelper = new THREE.GridHelper(100, 20, 0x000000, 0x333333);
+        gridHelper.position.y = 0.5; // Raised grid to match player's ground level
+        gridHelper.material.opacity = 0.15;
+        gridHelper.material.transparent = true;
+        this.scene.add(gridHelper);
 
         this.updateLoadingProgress(15);
 
@@ -296,10 +349,13 @@ class ZeldaLikeEngine {
         // Create collectible
         this.createCollectible(5, 0.5, -5);
 
-        this.updateLoadingProgress(95);
+        this.updateLoadingProgress(90);
 
         // Create sign
         this.createSign(3, 0, 3);
+
+        // ENHANCED: Add environmental details
+        this.createEnvironmentalDetails();
 
         this.updateLoadingProgress(100);
 
@@ -307,6 +363,173 @@ class ZeldaLikeEngine {
         setTimeout(() => {
             this.loadingScreen.style.display = 'none';
         }, 500);
+    }
+
+    // ENHANCED: Create environmental details
+    createEnvironmentalDetails() {
+        // Create rocks
+        for (let i = 0; i < 20; i++) {
+            const x = (Math.random() - 0.5) * 80;
+            const z = (Math.random() - 0.5) * 80;
+            const size = 0.2 + Math.random() * 0.3;
+
+            // Skip if too close to center (player start)
+            if (Math.sqrt(x*x + z*z) < 5) continue;
+
+            this.createRock(x, 0, z, size);
+        }
+
+        // Create grass patches
+        for (let i = 0; i < 50; i++) {
+            const x = (Math.random() - 0.5) * 80;
+            const z = (Math.random() - 0.5) * 80;
+
+            // Skip if too close to center
+            if (Math.sqrt(x*x + z*z) < 5) continue;
+
+            this.createGrassPatch(x, 0, z);
+        }
+
+        // Create a path
+        this.createPath();
+    }
+
+    // ENHANCED: Create a rock
+    createRock(x, y, z, size) {
+        const rockGeometry = new THREE.DodecahedronGeometry(size, 1);
+        const grayValue = 0.4 + Math.random() * 0.2;
+        const rockMaterial = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(grayValue, grayValue, grayValue),
+            roughness: 0.9,
+            metalness: 0.1
+        });
+
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        rock.position.set(x, y + size/2, z);
+        rock.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+
+        this.scene.add(rock);
+
+        // Add collision for rocks
+        // Using a slightly smaller collision radius to allow player to step over small rocks
+        const collisionRadius = size > 0.25 ? size * 0.8 : 0;
+        
+        if (collisionRadius > 0) {
+            const collisionData = {
+                object: rock,
+                type: 'rock',
+                position: new THREE.Vector3(x, y, z), // Add explicit position
+                radius: collisionRadius
+            };
+            
+            this.collidables.push(collisionData);
+            
+            // Add visual debug if debug mode is on
+            if (this.debugMode) {
+                const debugGeometry = new THREE.SphereGeometry(collisionRadius, 16, 16);
+                const debugMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xff0000, 
+                    wireframe: true, 
+                    transparent: true,
+                    opacity: 0.5
+                });
+                const debugMesh = new THREE.Mesh(debugGeometry, debugMaterial);
+                debugMesh.position.copy(rock.position);
+                this.scene.add(debugMesh);
+                this.debugObjects.push(debugMesh);
+            }
+        }
+
+        return rock;
+    }
+
+    // ENHANCED: Create grass patch
+    createGrassPatch(x, y, z) {
+        const patchGroup = new THREE.Group();
+        patchGroup.position.set(x, y, z);
+
+        const bladeCount = 5 + Math.floor(Math.random() * 7);
+
+        for (let i = 0; i < bladeCount; i++) {
+            const height = 0.2 + Math.random() * 0.3;
+            const width = 0.05 + Math.random() * 0.05;
+
+            const bladeGeometry = new THREE.PlaneGeometry(width, height);
+            const bladeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4CAF50,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.9
+            });
+
+            // Adjust color for variety
+            const hue = 0.3 + (Math.random() * 0.1); // Green hue with slight variation
+            bladeMaterial.color.setHSL(hue, 0.7, 0.4 + Math.random() * 0.2);
+
+            const blade = new THREE.Mesh(bladeGeometry, bladeMaterial);
+
+            // Position within patch
+            blade.position.set(
+                (Math.random() - 0.5) * 0.5,
+                height / 2,
+                (Math.random() - 0.5) * 0.5
+            );
+
+            // Random rotation
+            blade.rotation.y = Math.random() * Math.PI;
+
+            // Add to patch
+            patchGroup.add(blade);
+
+            // Tag for wind animation
+            blade.userData.type = 'grass';
+            blade.userData.windFactor = 0.5 + Math.random() * 0.5;
+        }
+
+        this.scene.add(patchGroup);
+        return patchGroup;
+    }
+
+    // ENHANCED: Create a path to help with orientation
+    createPath() {
+        // Create a winding path with points - all points much lower to avoid player collision
+        const pathPoints = [
+            new THREE.Vector3(0, -0.1, 0),      // Lower path vertices
+            new THREE.Vector3(5, -0.1, 5),
+            new THREE.Vector3(10, -0.1, 0),
+            new THREE.Vector3(15, -0.1, -5),
+            new THREE.Vector3(10, -0.1, -10),
+            new THREE.Vector3(0, -0.1, -15),
+            new THREE.Vector3(-10, -0.1, -10),
+            new THREE.Vector3(-15, -0.1, 0),
+            new THREE.Vector3(-10, -0.1, 10),
+            new THREE.Vector3(0, -0.1, 15)
+        ];
+
+        // Create a smooth curve
+        const curve = new THREE.CatmullRomCurve3(pathPoints);
+        curve.closed = true;
+
+        // Create the path geometry - smaller radius
+        const pathGeometry = new THREE.TubeGeometry(curve, 100, 0.4, 8, false);
+        const pathMaterial = new THREE.MeshStandardMaterial({
+            color: 0xC2B280, // Sandy path color
+            roughness: 1,
+            metalness: 0
+        });
+
+        const path = new THREE.Mesh(pathGeometry, pathMaterial);
+        path.receiveShadow = true;
+        this.scene.add(path);
+
+        return path;
     }
 
     // Update loading progress
@@ -320,7 +543,9 @@ class ZeldaLikeEngine {
         const bodyGeometry = new THREE.CylinderGeometry(0.25, 0.25, 1, 8);
         const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x44aa88 });
         this.player = new THREE.Mesh(bodyGeometry, bodyMaterial);
-        this.player.position.y = 0.5;
+        
+        // Position player higher above the ground to avoid being stuck in the pathway
+        this.player.position.set(0, 1.0, 0); // Increased height from 0.5 to 1.0
         this.player.castShadow = true;
         this.scene.add(this.player);
 
@@ -340,13 +565,19 @@ class ZeldaLikeEngine {
         cap.castShadow = true;
         head.add(cap);
 
-        // Player sword
+        // Create a sword holder object to make rotation easier
+        this.swordHolder = new THREE.Object3D();
+        this.swordHolder.position.set(0, 0, 0); // Center in player's body
+        this.player.add(this.swordHolder);
+        
+        // Player sword - now attached to the sword holder
         const swordGeometry = new THREE.BoxGeometry(0.05, 0.6, 0.05);
         const swordMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
         this.sword = new THREE.Mesh(swordGeometry, swordMaterial);
-        this.sword.position.set(0.3, 0, -0.2);
-        this.sword.rotation.z = Math.PI / 12;
-        this.player.add(this.sword);
+        // Position the sword in front of the player rather than to the side
+        this.sword.position.set(0, 0, -0.4); 
+        this.sword.rotation.x = Math.PI / 2; // Point sword forward
+        this.swordHolder.add(this.sword);
 
         // Sword handle
         const handleGeometry = new THREE.BoxGeometry(0.08, 0.15, 0.08);
@@ -354,13 +585,32 @@ class ZeldaLikeEngine {
         const handle = new THREE.Mesh(handleGeometry, handleMaterial);
         handle.position.y = -0.35;
         this.sword.add(handle);
+        
+        // Add debug helper to visualize attack hitbox
+        if (this.debugMode) {
+            const hitboxGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const hitboxMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff0000,
+                transparent: true,
+                opacity: 0.3,
+                wireframe: true
+            });
+            this.attackHitbox = new THREE.Mesh(hitboxGeometry, hitboxMaterial);
+            this.attackHitbox.position.set(0, 0, -1.0); // Position in front of player
+            this.player.add(this.attackHitbox);
+        }
 
-        // Player shield
+        // Create a shield holder for better positioning
+        this.shieldHolder = new THREE.Object3D();
+        this.shieldHolder.position.set(0, 0, 0);
+        this.player.add(this.shieldHolder);
+        
+        // Player shield - now attached to the shield holder
         const shieldGeometry = new THREE.BoxGeometry(0.1, 0.4, 0.4);
         const shieldMaterial = new THREE.MeshStandardMaterial({ color: 0x0000aa });
         const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
-        shield.position.set(-0.3, 0, -0.1);
-        this.player.add(shield);
+        shield.position.set(-0.3, 0, 0); // Position on the left side
+        this.shieldHolder.add(shield);
 
         // Player properties
         this.player.velocity = new THREE.Vector3(0, 0, 0);
@@ -369,6 +619,7 @@ class ZeldaLikeEngine {
         this.player.turnSpeed = 2;
         this.player.jumpHeight = 5;
         this.player.isAttacking = false;
+        this.player.radius = 0.3; // For collision detection
 
         // Camera target (slightly above player's head)
         this.cameraTarget = new THREE.Object3D();
@@ -380,7 +631,42 @@ class ZeldaLikeEngine {
         this.cameraLookOffset = new THREE.Vector3(0, 0.5, 0);
         this.cameraIdealPosition = new THREE.Vector3();
 
+        // Position player in an open area away from path
+        this.player.position.set(5, 1.0, 5);
+
         return this.player;
+    }
+    
+    // Ensure player spawns in a free area
+    ensurePlayerSpawnClearance() {
+        // Check if player is colliding with anything at spawn
+        if (this.checkCollision(this.player.position)) {
+            console.log("Player spawned inside an object, adjusting position");
+            
+            // Try different positions around the origin until we find one without collisions
+            const testPositions = [
+                new THREE.Vector3(2, 0.5, 0),
+                new THREE.Vector3(-2, 0.5, 0),
+                new THREE.Vector3(0, 0.5, 2),
+                new THREE.Vector3(0, 0.5, -2),
+                new THREE.Vector3(3, 0.5, 3),
+                new THREE.Vector3(-3, 0.5, 3),
+                new THREE.Vector3(3, 0.5, -3),
+                new THREE.Vector3(-3, 0.5, -3)
+            ];
+            
+            for (const pos of testPositions) {
+                if (!this.checkCollision(pos)) {
+                    this.player.position.copy(pos);
+                    console.log("Found clear spawn position at", pos);
+                    return;
+                }
+            }
+            
+            // If all else fails, move the player higher
+            this.player.position.y = 5;
+            console.log("Elevated player to avoid collisions");
+        }
     }
 
     // Create enemy
@@ -454,6 +740,32 @@ class ZeldaLikeEngine {
 
         this.scene.add(treeGroup);
 
+        // ENHANCED: Add collision detection for tree
+        const collisionRadius = 0.8;
+        const collisionData = {
+            object: treeGroup,
+            type: 'tree',
+            position: new THREE.Vector3(x, y, z),
+            radius: collisionRadius  // Collision radius
+        };
+        
+        this.collidables.push(collisionData);
+        
+        // Add visual debug if debug mode is on
+        if (this.debugMode) {
+            const debugGeometry = new THREE.CylinderGeometry(collisionRadius, collisionRadius, 2, 16);
+            const debugMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff0000, 
+                wireframe: true,
+                transparent: true,
+                opacity: 0.5
+            });
+            const debugMesh = new THREE.Mesh(debugGeometry, debugMaterial);
+            debugMesh.position.set(x, 1, z);
+            this.scene.add(debugMesh);
+            this.debugObjects.push(debugMesh);
+        }
+
         return treeGroup;
     }
 
@@ -521,6 +833,14 @@ class ZeldaLikeEngine {
 
         this.scene.add(houseGroup);
 
+        // ENHANCED: Add collision for house
+        this.collidables.push({
+            object: houseGroup,
+            type: 'house',
+            position: new THREE.Vector3(x, y, z),
+            size: new THREE.Vector3(6, 3, 5) // Size of the house box
+        });
+
         return houseGroup;
     }
 
@@ -546,7 +866,11 @@ class ZeldaLikeEngine {
 
         // Collectible base (heart container)
         const heartGeometry = new THREE.SphereGeometry(0.4, 16, 16);
-        const heartMaterial = new THREE.MeshStandardMaterial({ color: 0xFF0000 });
+        const heartMaterial = new THREE.MeshStandardMaterial({
+            color: 0xFF0000,
+            emissive: 0x330000, // ENHANCED: Add glow effect
+            emissiveIntensity: 0.5
+        });
         const heart = new THREE.Mesh(heartGeometry, heartMaterial);
         heart.castShadow = true;
 
@@ -620,6 +944,14 @@ class ZeldaLikeEngine {
             }
         });
 
+        // Add collision for sign
+        this.collidables.push({
+            object: signGroup,
+            type: 'sign',
+            position: new THREE.Vector3(x, y, z),
+            radius: 0.5
+        });
+
         return signGroup;
     }
 
@@ -647,61 +979,430 @@ class ZeldaLikeEngine {
         });
     }
 
-    // Player attack
+    // ENHANCED: Player attack with proper animation and feedback
     playerAttack() {
         if (this.player.isAttacking) return;
 
         this.player.isAttacking = true;
+        console.log("Player attacking!");
 
-        // Sword swing animation
-        const initialRotation = this.sword.rotation.z;
-        const swingAnimation = { value: initialRotation };
+        // If target locked, ensure we're facing the enemy before attacking
+        if (this.targetLocked && this.currentTarget) {
+            // When locked on, face away from the enemy
+            const targetDirection = new THREE.Vector3()
+                .subVectors(this.currentTarget.position, this.player.position)
+                .normalize();
+            targetDirection.y = 0; // Keep on horizontal plane
+            
+            // Invert direction (face 180 degrees away)
+            const invertedDirection = targetDirection.clone().multiplyScalar(-1);
+            
+            // Look away from target
+            const targetPosition = new THREE.Vector3()
+                .copy(this.player.position)
+                .add(invertedDirection);
+            this.player.lookAt(targetPosition);
+            
+            console.log("Attacking while locked on target - facing away");
+        }
 
-        // Detect hits on enemies
-        this.enemies.forEach(enemy => {
-            if (this.targetLocked && this.currentTarget === enemy) {
-                // Face the enemy
-                this.player.lookAt(enemy.position);
-            }
+        // Store initial sword position and rotation
+        const initialRotation = this.sword.rotation.x; // Now using X rotation for sword
+        const initialPosition = this.sword.position.clone();
 
-            const distanceToEnemy = this.player.position.distanceTo(enemy.position);
-            if (distanceToEnemy < 2) {
-                // Damage enemy
-                enemy.health -= 1;
+        // Create attack animation object
+        const attackAnimation = {
+            duration: 400, // ms - slightly faster swing
+            startTime: performance.now(),
+            complete: false
+        };
 
-                // Enemy knockback
-                const knockbackDirection = new THREE.Vector3()
+        // ENHANCED: Create sword trail effect
+        this.createSwordTrail();
+        
+        // Determine attack direction vector (directly in front of player)
+        const attackDirection = new THREE.Vector3(0, 0, -1);
+        attackDirection.applyQuaternion(this.player.quaternion);
+        
+        // Calculate attack position - exactly where the sword will strike
+        const attackPosition = this.player.position.clone().add(
+            attackDirection.multiplyScalar(1.2)
+        );
+        
+        // Visualize attack area in debug mode
+        if (this.debugMode && this.attackHitbox) {
+            this.attackHitbox.visible = true;
+            setTimeout(() => {
+                if (this.attackHitbox) this.attackHitbox.visible = false;
+            }, 400);
+        }
+        
+        console.log("Attack direction:", attackDirection);
+        console.log("Attack position:", attackPosition);
+
+        // Detect hits on enemies - moved to mid-swing for better timing
+        setTimeout(() => {
+            const hitEnemies = [];
+            this.enemies.forEach(enemy => {
+                const distanceToEnemy = this.player.position.distanceTo(enemy.position);
+                
+                // Calculate angle between player's forward direction and direction to enemy
+                const toEnemy = new THREE.Vector3()
                     .subVectors(enemy.position, this.player.position)
-                    .normalize()
-                    .multiplyScalar(1);
+                    .normalize();
+                toEnemy.y = 0; // Keep on horizontal plane
+                
+                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.player.quaternion);
+                const angleToEnemy = forward.angleTo(toEnemy);
+                
+                // Check if enemy is in front of player (within 45 degrees) and in range
+                const inAttackAngle = angleToEnemy < Math.PI / 4; // 45 degrees
+                const attackRange = this.targetLocked && this.currentTarget === enemy ? 3.0 : 2.0;
+                
+                console.log(`Enemy distance: ${distanceToEnemy.toFixed(2)}, angle: ${(angleToEnemy * 180 / Math.PI).toFixed(2)}°`);
+                
+                // Calculate if sword can hit enemy - better aligned with visual cues
+                const swordTip = new THREE.Vector3(0, 0, -1.5).applyQuaternion(this.player.quaternion).add(this.player.position);
+                const swordDistance = enemy.position.distanceTo(swordTip);
+                console.log(`Sword tip distance to enemy: ${swordDistance.toFixed(2)}`);
+                
+                // Use wider attack angle when target locked and consider the sword's position
+                if ((this.targetLocked && this.currentTarget === enemy && distanceToEnemy < attackRange) || 
+                    (distanceToEnemy < attackRange && inAttackAngle) ||
+                    (swordDistance < 1.5)) {
+                    
+                    console.log("Hit enemy!", enemy);
+                    
+                    // Damage enemy
+                    enemy.health -= 1;
+                    hitEnemies.push(enemy);
 
-                enemy.position.add(knockbackDirection);
+                    // Enemy knockback
+                    const knockbackDirection = new THREE.Vector3()
+                        .subVectors(enemy.position, this.player.position)
+                        .normalize()
+                        .multiplyScalar(1);
 
-                // Check if enemy is defeated
-                if (enemy.health <= 0) {
-                    this.scene.remove(enemy);
+                    enemy.position.add(knockbackDirection);
 
-                    // Remove from enemies array
-                    const index = this.enemies.indexOf(enemy);
-                    if (index > -1) {
-                        this.enemies.splice(index, 1);
-                    }
+                    // ENHANCED: Visual feedback for hit at the actual hit location
+                    const hitLocation = enemy.position.clone().sub(knockbackDirection.multiplyScalar(0.3));
+                    this.createHitEffect(hitLocation);
 
-                    // Remove as target if targeted
-                    if (this.currentTarget === enemy) {
-                        this.currentTarget = null;
-                        this.targetLocked = false;
-                        this.reticle.style.display = 'none';
+                    // Flash enemy red
+                    const originalColor = enemy.material.color.clone();
+                    enemy.material.color.set(0xFF0000);
+                    setTimeout(() => {
+                        if (enemy.parent) { // Check if enemy still exists
+                            enemy.material.color.copy(originalColor);
+                        }
+                    }, 200);
+
+                    // Check if enemy is defeated
+                    if (enemy.health <= 0) {
+                        // ENHANCED: Create death effect
+                        this.createDeathEffect(enemy.position);
+
+                        this.scene.remove(enemy);
+
+                        // Remove from enemies array
+                        const index = this.enemies.indexOf(enemy);
+                        if (index > -1) {
+                            this.enemies.splice(index, 1);
+                        }
+
+                        // Remove as target if targeted
+                        if (this.currentTarget === enemy) {
+                            this.currentTarget = null;
+                            this.targetLocked = false;
+                            this.reticle.style.display = 'none';
+                        }
                     }
                 }
+            });
+        }, 200); // Execute hit detection earlier in the swing
+
+        // Animate the sword swing
+        const animateSwordSwing = (timestamp) => {
+            if (!this.player.isAttacking) return;
+
+            const elapsed = timestamp - attackAnimation.startTime;
+            const progress = Math.min(elapsed / attackAnimation.duration, 1);
+
+            if (progress < 0.5) {
+                // Forward swing (0 to 0.5)
+                const swingProgress = progress * 2; // Scale to 0-1
+                
+                // Swing sword forward - now using swordHolder to rotate entire sword group
+                this.swordHolder.rotation.y = this.lerp(0, -Math.PI/2, this.easeOutQuad(swingProgress));
+                
+                // Also adjust the sword's own rotation for extra effect
+                this.sword.rotation.x = this.lerp(initialRotation, initialRotation + Math.PI/4, this.easeOutQuad(swingProgress));
+            } else {
+                // Return swing (0.5 to 1)
+                const returnProgress = (progress - 0.5) * 2; // Scale to 0-1
+                
+                // Return sword to original position
+                this.swordHolder.rotation.y = this.lerp(-Math.PI/2, 0, this.easeInOutQuad(returnProgress));
+                this.sword.rotation.x = this.lerp(initialRotation + Math.PI/4, initialRotation, this.easeInOutQuad(returnProgress));
             }
+
+            if (progress < 1) {
+                requestAnimationFrame(animateSwordSwing);
+            } else {
+                // Reset after animation completes
+                this.swordHolder.rotation.y = 0;
+                this.sword.rotation.x = initialRotation;
+                this.player.isAttacking = false;
+            }
+        };
+
+        // Start animation
+        requestAnimationFrame(animateSwordSwing);
+    }
+
+    // ENHANCED: Create sword trail effect
+    createSwordTrail() {
+        // Get sword tip position in world space - now at the end of sword
+        const swordTip = new THREE.Vector3(0, 0, -0.7); // End of sword
+        this.sword.localToWorld(swordTip);
+
+        // Create sword trail geometry
+        const trailGeometry = new THREE.BufferGeometry();
+        const vertices = [];
+
+        // Get player's forward direction
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.player.quaternion);
+        
+        // Get perpendicular vector to create the arc of the sword swing
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.player.quaternion);
+        const up = new THREE.Vector3(0, 1, 0);
+        
+        // Create curved path for trail that follows the sword's sweeping motion
+        const radius = 0.9; // Slightly wider arc
+        const swingAngle = Math.PI / 2; // 90-degree swing
+        
+        console.log("Creating sword trail, player facing:", forward);
+
+        // Create a horizontal swing arc (matches the new sword animation)
+        for (let i = 0; i <= 18; i++) {
+            // Create a curved arc
+            const segment = i / 18;
+            
+            // Calculate the swing angle for this segment - now horizontal sweep
+            const segmentAngle = swingAngle * segment;
+            
+            // Calculate the position for this segment - rotating around player's vertical axis
+            const swingRotation = new THREE.Quaternion().setFromAxisAngle(
+                up,          // Rotate around Y axis (vertical)
+                -segmentAngle // Negative angle for correct sweep direction
+            );
+            
+            // Start vector is forward and slightly right
+            const startVec = forward.clone().multiplyScalar(radius);
+            startVec.add(right.clone().multiplyScalar(radius * 0.3));
+            
+            // Apply rotation for this segment
+            startVec.applyQuaternion(swingRotation);
+            
+            // Add slight vertical arc to the swing
+            const verticalOffset = Math.sin(segment * Math.PI) * 0.2;
+            
+            // Find position in world space
+            const worldPos = this.player.position.clone().add(new THREE.Vector3(
+                startVec.x,
+                verticalOffset + 0.5, // Keep trail at sword height
+                startVec.z
+            ));
+            
+            // Add the point to the trail
+            vertices.push(
+                worldPos.x,
+                worldPos.y,
+                worldPos.z
+            );
+        }
+
+        trailGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+        // Create trail material with a better visual effect
+        const trailMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00BFFF, // Deeper blue glow
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
         });
 
-        // Reset after animation
-        setTimeout(() => {
-            this.player.isAttacking = false;
-            this.sword.rotation.z = initialRotation;
-        }, 500);
+        // Create trail mesh
+        const trail = new THREE.Line(trailGeometry, trailMaterial);
+        this.scene.add(trail);
+
+        // Animate trail fade out
+        const startTime = performance.now();
+        const duration = 350; // Match animation speed
+
+        const animateTrail = (timestamp) => {
+            const elapsed = timestamp - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            if (trail.material) {
+                trail.material.opacity = 0.8 * (1 - progress);
+            }
+
+            if (progress < 1) {
+                requestAnimationFrame(animateTrail);
+            } else {
+                this.scene.remove(trail);
+            }
+        };
+
+        requestAnimationFrame(animateTrail);
+    }
+
+    // ENHANCED: Create hit effect at position
+    createHitEffect(position) {
+        // Create particles for hit effect
+        const particleCount = 8;
+        const particles = new THREE.Group();
+
+        for (let i = 0; i < particleCount; i++) {
+            const particleGeometry = new THREE.SphereGeometry(0.05, 4, 4);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFF9500,
+                transparent: true
+            });
+
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+
+            // Random starting position near hit point
+            particle.position.set(
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2 + 0.5,
+                (Math.random() - 0.5) * 0.2
+            );
+
+            // Random velocity
+            particle.userData.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.05,
+                Math.random() * 0.05,
+                (Math.random() - 0.5) * 0.05
+            );
+
+            particles.add(particle);
+        }
+
+        // Position particles at hit location
+        particles.position.copy(position);
+        this.scene.add(particles);
+
+        // Animate particles
+        const startTime = performance.now();
+        const duration = 400;
+
+        const animateParticles = (timestamp) => {
+            const elapsed = timestamp - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            particles.children.forEach(particle => {
+                // Move particle
+                particle.position.add(particle.userData.velocity);
+
+                // Add gravity
+                particle.userData.velocity.y -= 0.002;
+
+                // Fade out
+                particle.material.opacity = 1 - progress;
+            });
+
+            if (progress < 1) {
+                requestAnimationFrame(animateParticles);
+            } else {
+                this.scene.remove(particles);
+            }
+        };
+
+        requestAnimationFrame(animateParticles);
+    }
+
+    // ENHANCED: Create death effect
+    createDeathEffect(position) {
+        // Create explosion particles
+        const particleCount = 15;
+        const particleGroup = new THREE.Group();
+
+        for (let i = 0; i < particleCount; i++) {
+            const particleGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xFF3D00,
+                transparent: true
+            });
+
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+
+            // Random direction outward
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 0.1;
+            particle.position.set(
+                Math.cos(angle) * radius,
+                (Math.random() - 0.5) * 0.2,
+                Math.sin(angle) * radius
+            );
+
+            // Random velocity outward
+            particle.userData.velocity = particle.position.clone().normalize().multiplyScalar(0.08);
+            particle.userData.velocity.y = Math.random() * 0.08; // Add upward component
+
+            particleGroup.add(particle);
+        }
+
+        // Position at enemy location
+        particleGroup.position.copy(position);
+        this.scene.add(particleGroup);
+
+        // Animate explosion
+        const startTime = performance.now();
+        const duration = 600;
+
+        const animateExplosion = (timestamp) => {
+            const elapsed = timestamp - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            particleGroup.children.forEach(particle => {
+                // Move particle
+                particle.position.add(particle.userData.velocity);
+
+                // Add gravity
+                particle.userData.velocity.y -= 0.003;
+
+                // Fade out
+                particle.material.opacity = 1 - progress;
+
+                // Scale up slightly
+                const scale = 1 + progress;
+                particle.scale.set(scale, scale, scale);
+            });
+
+            if (progress < 1) {
+                requestAnimationFrame(animateExplosion);
+            } else {
+                this.scene.remove(particleGroup);
+            }
+        };
+
+        requestAnimationFrame(animateExplosion);
+    }
+
+    // ENHANCED: Helper functions for animations
+    lerp(a, b, t) {
+        return a + (b - a) * t;
+    }
+
+    easeOutQuad(t) {
+        return t * (2 - t);
+    }
+
+    easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     }
 
     // Check for interaction
@@ -719,7 +1420,10 @@ class ZeldaLikeEngine {
 
     // Toggle target lock
     toggleTargetLock() {
-        if (this.enemies.length === 0) return;
+        if (this.enemies.length === 0) {
+            console.log("No enemies to target");
+            return;
+        }
 
         if (!this.targetLocked) {
             // Find closest enemy
@@ -738,11 +1442,27 @@ class ZeldaLikeEngine {
                 this.currentTarget = closestEnemy;
                 this.targetLocked = true;
                 this.reticle.style.display = 'block';
+                
+                // Immediately face the enemy when locking on
+                const targetDirection = new THREE.Vector3()
+                    .subVectors(closestEnemy.position, this.player.position)
+                    .normalize();
+                targetDirection.y = 0; // Keep on horizontal plane
+                
+                const targetPosition = new THREE.Vector3()
+                    .copy(this.player.position)
+                    .add(targetDirection);
+                this.player.lookAt(targetPosition);
+                
+                console.log("Target locked on enemy at distance:", closestDistance);
+            } else {
+                console.log("No enemies within range");
             }
         } else {
             this.targetLocked = false;
             this.currentTarget = null;
             this.reticle.style.display = 'none';
+            console.log("Target lock released");
         }
     }
 
@@ -835,10 +1555,26 @@ class ZeldaLikeEngine {
         knockbackDirection.y = 1;
         this.player.position.add(knockbackDirection);
 
+        // ENHANCED: Visual feedback for damage
+        const flashInterval = setInterval(() => {
+            this.player.visible = !this.player.visible;
+        }, 100);
+
+        setTimeout(() => {
+            clearInterval(flashInterval);
+            this.player.visible = true;
+        }, 500);
+
         // Death
         if (this.playerHealth <= 0) {
             alert('Game Over! Refresh to restart.');
+
+            // ENHANCED: Death animation
+            this.player.rotation.x = -Math.PI / 2; // Fall over
         }
+
+        // ENHANCED: Create hit effect at player position
+        this.createHitEffect(this.player.position.clone());
     }
 
     // Update collectibles
@@ -855,13 +1591,27 @@ class ZeldaLikeEngine {
 
                 // Update rotation
                 collectible.rotation.y += collectible.userData.rotationSpeed;
+
+                // ENHANCED: Add pulsing glow effect
+                const pulseIntensity = (Math.sin(collectible.userData.time * 3) * 0.25) + 0.75;
+                collectible.material.emissiveIntensity = pulseIntensity;
+
+                // Check for proximity to player for visual feedback
+                const distanceToPlayer = this.player.position.distanceTo(collectible.parent.position);
+                if (distanceToPlayer < 3) {
+                    // Speed up rotation and pulse when player is near
+                    collectible.rotation.y += collectible.userData.rotationSpeed * 2;
+                }
             }
         });
     }
 
-    // THIS IS THE FIRST MISSING METHOD: Update player movement and physics
+    // ENHANCED: Update player movement and physics with collision detection
     updatePlayer(deltaTime) {
         if (!this.player) return;
+
+        // Store original position for collision detection
+        const originalPosition = this.player.position.clone();
 
         // Handle player movement
         const playerDirection = new THREE.Vector3(0, 0, 0);
@@ -869,17 +1619,36 @@ class ZeldaLikeEngine {
         // Calculate forward direction based on camera orientation when not target locked
         let forward = new THREE.Vector3(0, 0, -1);
         let right = new THREE.Vector3(1, 0, 0);
-
-        if (!this.targetLocked) {
-            // Apply the camera's Y rotation to the movement directions
+        
+        // Always keep the player facing away from the target when locked
+        if (this.targetLocked && this.currentTarget) {
+            // Get direction to the target
+            const targetDirection = new THREE.Vector3()
+                .subVectors(this.currentTarget.position, this.player.position)
+                .normalize();
+            targetDirection.y = 0; // Ensure we're only rotating on the horizontal plane
+            
+            // Invert the direction - player faces away from target
+            const invertedDirection = targetDirection.clone().multiplyScalar(-1);
+            
+            // Set player rotation to face away from target
+            const targetPosition = new THREE.Vector3()
+                .copy(this.player.position)
+                .add(invertedDirection);
+            this.player.lookAt(targetPosition);
+            
+            // IMPORTANT: For movement, we still want "forward" to mean "toward the target"
+            // and "backward" to mean "away from the target", even though the player
+            // is visually facing away
+            forward = targetDirection.clone(); // Forward means toward the target
+            right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+            
+            // Debug message
+            console.log("Target locked, player facing away but forward controls go toward target");
+        } else {
+            // Apply the camera's Y rotation to the movement directions when not target locked
             forward.applyEuler(new THREE.Euler(0, this.mouseControls.cameraRotation.y, 0));
             right.applyEuler(new THREE.Euler(0, this.mouseControls.cameraRotation.y, 0));
-        } else if (this.currentTarget) {
-            // When target locked, forward is toward the target
-            forward.subVectors(this.currentTarget.position, this.player.position).normalize();
-            forward.y = 0;
-            // Right is perpendicular to forward
-            right.crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
         }
 
         // Apply movement based on keys
@@ -888,28 +1657,117 @@ class ZeldaLikeEngine {
         if (this.keys.right) playerDirection.add(right);
         if (this.keys.left) playerDirection.sub(right);
 
-        // Normalize movement vector
+        // Add subtle bobbing effect when walking
+        if (playerDirection.length() > 0) {
+            this.player.userData.walkTime = (this.player.userData.walkTime || 0) + deltaTime * 5;
+            const bobHeight = Math.sin(this.player.userData.walkTime) * 0.03;
+            this.player.children.forEach(child => {
+                if (child.position.y > 0) { // Head bobbing
+                    child.position.y = 0.7 + bobHeight;
+                }
+            });
+        }
+
+        // Normalize movement vector and apply velocity
         if (playerDirection.length() > 0) {
             playerDirection.normalize();
 
             // Apply player speed
             playerDirection.multiplyScalar(this.player.speed * deltaTime);
 
-            // Update player position
-            this.player.position.add(playerDirection);
+            // Calculate new position
+            const newPosition = this.player.position.clone().add(playerDirection);
 
-            // Rotate player to face movement direction if not target locked
-            if (!this.targetLocked) {
-                const lookAt = new THREE.Vector3();
-                lookAt.copy(this.player.position).add(playerDirection);
-                this.player.lookAt(lookAt);
+            // Debug movement attempts
+            console.log("Attempting to move from", this.player.position, "to", newPosition);
+
+            // Check for collisions before applying movement
+            if (!this.checkCollision(newPosition)) {
+                // No collision, move freely
+                this.player.position.copy(newPosition);
+                console.log("Movement successful - no collision");
+            } else {
+                console.log("Collision detected, trying to slide");
+                
+                // Try sliding along X axis first
+                const slideX = this.player.position.clone();
+                slideX.x = newPosition.x;
+
+                if (!this.checkCollision(slideX)) {
+                    this.player.position.copy(slideX);
+                    console.log("Sliding along X axis");
+                } else {
+                    // Try sliding along Z axis if X failed
+                    const slideZ = this.player.position.clone();
+                    slideZ.z = newPosition.z;
+
+                    if (!this.checkCollision(slideZ)) {
+                        this.player.position.copy(slideZ);
+                        console.log("Sliding along Z axis");
+                    } else {
+                        console.log("Movement blocked in all directions");
+                        
+                        // Try to step over small obstacles
+                        const elevatedPosition = newPosition.clone();
+                        elevatedPosition.y += 0.1; // Try slightly higher
+                        
+                        if (!this.checkCollision(elevatedPosition)) {
+                            this.player.position.copy(elevatedPosition);
+                            console.log("Stepping over obstacle");
+                        }
+                    }
+                }
             }
+
+            // Rotate player to face movement direction ONLY if not target locked
+            if (!this.targetLocked) {
+                // Calculate the direction the camera is facing but on horizontal plane
+                const cameraForward = new THREE.Vector3(0, 0, -1);
+                cameraForward.applyEuler(new THREE.Euler(0, this.mouseControls.cameraRotation.y, 0));
+                cameraForward.y = 0;
+                cameraForward.normalize();
+                
+                // For correct sword orientation, we need to look in the opposite direction of movement
+                const lookAt = new THREE.Vector3();
+                lookAt.copy(this.player.position).sub(playerDirection);
+                this.player.lookAt(lookAt);
+                
+                // Debug
+                console.log("Regular movement, facing opposite of movement direction");
+            }
+
+            // ENHANCED: Add footstep effect when moving
+            this.player.userData.lastStepTime = this.player.userData.lastStepTime || 0;
+            this.player.userData.stepInterval = 0.3; // seconds between footsteps
+
+            if (performance.now() / 1000 - this.player.userData.lastStepTime > this.player.userData.stepInterval) {
+                // Create subtle dust at feet when moving
+                if (this.player.onGround) {
+                    this.createFootstepDust(this.player.position.clone());
+                    this.player.userData.lastStepTime = performance.now() / 1000;
+                }
+            }
+        } else if (this.targetLocked && this.currentTarget) {
+            // If we're not moving but target is locked, keep facing away from the target
+            const targetDirection = new THREE.Vector3()
+                .subVectors(this.currentTarget.position, this.player.position)
+                .normalize();
+            targetDirection.y = 0;
+            
+            // Face away from target (180 degree rotation)
+            const invertedDirection = targetDirection.clone().multiplyScalar(-1);
+            
+            const targetPosition = new THREE.Vector3()
+                .copy(this.player.position)
+                .add(invertedDirection);
+            this.player.lookAt(targetPosition);
         }
 
         // Handle jumping
         if (this.keys.jump && this.player.onGround) {
             this.player.velocity.y = this.player.jumpHeight;
             this.player.onGround = false;
+            console.log("Player jumping");
         }
 
         // Apply gravity
@@ -917,37 +1775,208 @@ class ZeldaLikeEngine {
             this.player.velocity.y -= 9.8 * deltaTime;
             this.player.position.y += this.player.velocity.y * deltaTime;
 
-            // Check ground collision
-            if (this.player.position.y <= 0.5) {
-                this.player.position.y = 0.5;
+            // Check ground collision - use 1.0 as the ground level now
+            if (this.player.position.y <= 1.0) {
+                this.player.position.y = 1.0;
                 this.player.velocity.y = 0;
                 this.player.onGround = true;
+                console.log("Player landed on ground");
+
+                // Create landing dust effect if falling from height
+                if (this.player.velocity.y < -3) {
+                    this.createFootstepDust(this.player.position.clone(), 2);
+                }
             }
         }
     }
 
-    // THIS IS THE SECOND MISSING METHOD: Update camera position
+    // ENHANCED: Check for collision with objects in the world
+    checkCollision(position) {
+        // Immediately return false if we're checking a position too high in the air
+        // This allows the player to jump over obstacles
+        if (position.y > 3.0) {
+            return false;
+        }
+        
+        // Check collisions with all collidable objects
+        for (const collidable of this.collidables) {
+            // Skip if the collidable doesn't have required properties
+            if (!collidable.position && !collidable.object) {
+                continue;
+            }
+            
+            // Get the actual position either from the collidable's position or from its object
+            const collidablePosition = collidable.position || collidable.object.position;
+            
+            switch (collidable.type) {
+                case 'tree':
+                case 'sign':
+                case 'rock':
+                    // Radial collision detection for cylindrical objects
+                    const dx = position.x - collidablePosition.x;
+                    const dz = position.z - collidablePosition.z;
+                    const distance = Math.sqrt(dx * dx + dz * dz);
+                    
+                    // Reduced collision radius to allow player to move more freely
+                    const adjustedRadius = collidable.radius * 0.8;
+
+                    // Adjust collision distance based on player radius plus object radius
+                    if (distance < this.player.radius + adjustedRadius) {
+                        // Debug output
+                        console.log(`Collision with ${collidable.type} at distance ${distance.toFixed(2)}, required distance: ${(this.player.radius + adjustedRadius).toFixed(2)}`);
+                        return true; // Collision detected
+                    }
+                    break;
+
+                case 'house':
+                    // Box collision detection for house
+                    const minX = collidablePosition.x - collidable.size.x / 2 - this.player.radius;
+                    const maxX = collidablePosition.x + collidable.size.x / 2 + this.player.radius;
+                    const minZ = collidablePosition.z - collidable.size.z / 2 - this.player.radius;
+                    const maxZ = collidablePosition.z + collidable.size.z / 2 + this.player.radius;
+
+                    if (position.x > minX && position.x < maxX &&
+                        position.z > minZ && position.z < maxZ) {
+                        console.log(`Collision with house at position ${position.x}, ${position.z}`);
+                        return true; // Collision detected
+                    }
+                    break;
+            }
+        }
+
+        return false; // No collision
+    }
+
+    // ENHANCED: Create dust effect for footsteps or landing
+    createFootstepDust(position, scale = 1) {
+        const dustCount = 3 * scale;
+        const dustGroup = new THREE.Group();
+
+        for (let i = 0; i < dustCount; i++) {
+            const size = (0.05 + Math.random() * 0.05) * scale;
+            const dustGeometry = new THREE.SphereGeometry(size, 4, 4);
+            const dustMaterial = new THREE.MeshBasicMaterial({
+                color: 0xCCCCCC,
+                transparent: true,
+                opacity: 0.4
+            });
+
+            const dust = new THREE.Mesh(dustGeometry, dustMaterial);
+
+            // Position slightly above ground and with random offset
+            dust.position.set(
+                (Math.random() - 0.5) * 0.2 * scale,
+                0.05,
+                (Math.random() - 0.5) * 0.2 * scale
+            );
+
+            // Random upward and outward velocity
+            dust.userData.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.03 * scale,
+                0.03 + Math.random() * 0.02 * scale,
+                (Math.random() - 0.5) * 0.03 * scale
+            );
+
+            dustGroup.add(dust);
+        }
+
+        // Position at player's feet
+        dustGroup.position.copy(position);
+        dustGroup.position.y = 0.05;
+        this.scene.add(dustGroup);
+
+        // Animate dust particles
+        const startTime = performance.now();
+        const duration = 600 * scale;
+
+        const animateDust = (timestamp) => {
+            const elapsed = timestamp - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            dustGroup.children.forEach(dust => {
+                // Move dust particle
+                dust.position.add(dust.userData.velocity);
+
+                // Add slight gravity and air resistance
+                dust.userData.velocity.y -= 0.001;
+                dust.userData.velocity.multiplyScalar(0.97);
+
+                // Fade out
+                dust.material.opacity = 0.4 * (1 - progress);
+
+                // Expand slightly
+                const scale = 1 + progress * 0.5;
+                dust.scale.set(scale, scale, scale);
+            });
+
+            if (progress < 1) {
+                requestAnimationFrame(animateDust);
+            } else {
+                this.scene.remove(dustGroup);
+            }
+        };
+
+        requestAnimationFrame(animateDust);
+    }
+
+    // ENHANCED: Update camera position with improved collision and cinematic effects
     updateCamera(deltaTime) {
         if (!this.player) return;
 
         if (this.targetLocked && this.currentTarget) {
-            // Target lock camera: position behind player looking at target
+            // Get direction vector from player to target
             const playerToTarget = new THREE.Vector3();
             playerToTarget.subVectors(this.currentTarget.position, this.player.position).normalize();
-
-            // Calculate position behind player
+            
+            // Get the current player-to-target distance
+            const distanceToTarget = this.player.position.distanceTo(this.currentTarget.position);
+            
+            // Calculate optimal camera position slightly higher and behind player
             const cameraPos = new THREE.Vector3();
+            // Start at player position
             cameraPos.copy(this.player.position);
-            cameraPos.sub(playerToTarget.multiplyScalar(this.mouseControls.orbitDistance));
-            cameraPos.y += this.cameraOffset.y;
+            // Move backward along the player-to-target axis (in reverse)
+            const backDistance = this.mouseControls.orbitDistance + 1.0; // Slightly further back
+            const backVector = playerToTarget.clone().multiplyScalar(-backDistance);
+            cameraPos.add(backVector);
+            // Raise camera height based on distance to target (higher when further away)
+            const heightFactor = 1.5 + (distanceToTarget * 0.1); // Dynamic height
+            cameraPos.y += this.cameraOffset.y * heightFactor;
 
-            // Smoothly move camera
-            this.camera.position.lerp(cameraPos, 5 * deltaTime);
+            // Add offset to right side for more cinematic view during combat
+            const rightVector = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), playerToTarget).normalize();
+            cameraPos.add(rightVector.multiplyScalar(1.0));
 
-            // Look at midpoint between player and target
+            // Smoothly move camera with dynamic speed based on how fast the target is moving
+            const targetMoveSpeed = (this.currentTarget.lastPosition) ? 
+                this.currentTarget.position.distanceTo(this.currentTarget.lastPosition) / deltaTime : 0;
+            this.currentTarget.lastPosition = this.currentTarget.position.clone();
+            
+            // Faster camera movement when target is moving quickly
+            const lerpSpeed = 5 + (targetMoveSpeed * 2);
+            this.camera.position.lerp(cameraPos, lerpSpeed * deltaTime);
+
+            // Calculate ideal look target - dynamic positioning between player and enemy
+            // When enemy is closer, look more at the enemy; when further, look more at midpoint
+            const proximityFactor = Math.min(1, 4 / distanceToTarget);
             const lookTarget = new THREE.Vector3();
-            lookTarget.addVectors(this.player.position, this.currentTarget.position).multiplyScalar(0.5);
+            lookTarget.copy(this.player.position).lerp(
+                this.currentTarget.position, 
+                0.3 + (proximityFactor * 0.4) // Weighted more toward enemy at close range
+            );
+            // Add slight height for better angle
+            lookTarget.y += 0.7;
+            
             this.camera.lookAt(lookTarget);
+
+            // ENHANCED: Add dynamic camera shake during combat based on distance
+            if (this.player.isAttacking) {
+                const shakeIntensity = 0.015 - (distanceToTarget * 0.002); // More intense at close range
+                const shakeAmount = Math.max(0.003, Math.min(0.015, shakeIntensity)); 
+                this.camera.position.x += (Math.random() - 0.5) * shakeAmount;
+                this.camera.position.y += (Math.random() - 0.5) * shakeAmount;
+                this.camera.position.z += (Math.random() - 0.5) * shakeAmount;
+            }
         } else {
             // Standard third-person camera
             // Calculate camera position based on orbit distance and rotation
@@ -961,16 +1990,33 @@ class ZeldaLikeEngine {
             // Add to player position
             cameraPos.add(this.player.position);
 
-            // Smoothly move camera
-            this.camera.position.lerp(cameraPos, 5 * deltaTime);
+            // ENHANCED: Add slight camera lag effect for more natural movement
+            if (this.lastPlayerPos) {
+                const playerMoveDelta = new THREE.Vector3().subVectors(this.player.position, this.lastPlayerPos);
+                const moveMagnitude = playerMoveDelta.length();
 
-            // Look at player
+                if (moveMagnitude > 0.01) { // Only apply when significant movement occurs
+                    const lagFactor = 0.05;
+                    const lag = playerMoveDelta.clone().multiplyScalar(-lagFactor);
+                    cameraPos.add(lag);
+                }
+            }
+
+            // Remember player position for next frame
+            this.lastPlayerPos = this.player.position.clone();
+
+            // Smoothly move camera with dynamic damping based on player movement
+            const playerSpeed = this.player.velocity ? this.player.velocity.length() : 0;
+            const dampingFactor = 5 + (playerSpeed * 0.5); // More damping when moving fast
+            this.camera.position.lerp(cameraPos, dampingFactor * deltaTime);
+
+            // Look at player with slight offset for better perspective
             const lookTarget = new THREE.Vector3();
             lookTarget.copy(this.player.position).add(this.cameraLookOffset);
             this.camera.lookAt(lookTarget);
         }
 
-        // Simple camera collision detection (optional enhancement)
+        // ENHANCED: More advanced camera collision detection
         // Prevent camera from going through solid objects
         const rayStart = new THREE.Vector3();
         rayStart.copy(this.player.position);
@@ -979,20 +2025,62 @@ class ZeldaLikeEngine {
         const rayDirection = new THREE.Vector3();
         rayDirection.subVectors(this.camera.position, rayStart).normalize();
 
-        const raycaster = new THREE.Raycaster(rayStart, rayDirection);
-        const intersects = raycaster.intersectObjects(this.scene.children, true);
+        const rayLength = this.player.position.distanceTo(this.camera.position);
+        const raycaster = new THREE.Raycaster(rayStart, rayDirection, 0.1, rayLength);
+
+        // Check against all collidable objects
+        const collidableObjects = this.scene.children.filter(obj => {
+            // Filter out the player and non-solid objects
+            return obj !== this.player;
+        });
+
+        const intersects = raycaster.intersectObjects(collidableObjects, true);
 
         if (intersects.length > 0) {
             const collision = intersects[0];
-            const distanceToObstacle = collision.distance;
 
             // If camera would be inside an object, adjust its position
-            if (distanceToObstacle < this.player.position.distanceTo(this.camera.position)) {
+            if (collision.distance < rayLength) {
                 // Place camera at collision point, slightly in front
                 const adjustedPosition = new THREE.Vector3();
-                adjustedPosition.copy(rayStart).add(rayDirection.multiplyScalar(distanceToObstacle * 0.9));
-                this.camera.position.copy(adjustedPosition);
+                adjustedPosition.copy(rayStart).add(rayDirection.multiplyScalar(collision.distance * 0.9));
+
+                // Smoothly move to new position
+                this.camera.position.lerp(adjustedPosition, 10 * deltaTime);
+
+                // ENHANCED: Fade out objects between camera and player for visibility
+                const hit = collision.object;
+                if (hit.material && !hit.userData.wasTransparent) {
+                    hit.userData.originalOpacity = hit.material.opacity || 1;
+                    hit.userData.wasTransparent = hit.material.transparent;
+                    hit.material.transparent = true;
+                    hit.material.opacity = 0.3;
+
+                    // Restore original values when camera moves away
+                    setTimeout(() => {
+                        if (hit.material) {
+                            hit.material.opacity = hit.userData.originalOpacity;
+                            hit.material.transparent = hit.userData.wasTransparent;
+                        }
+                    }, 1000);
+                }
             }
+        }
+
+        // ENHANCED: Apply subtle camera shake on landing from jump
+        if (this.player.onGround && this.player.velocity && this.player.velocity.y < -5) {
+            const shakeAmount = Math.min(Math.abs(this.player.velocity.y) * 0.01, 0.05);
+
+            const applyShake = () => {
+                this.camera.position.y += (Math.random() - 0.5) * shakeAmount;
+                shakeAmount *= 0.9; // Decay the shake
+
+                if (shakeAmount > 0.001) {
+                    requestAnimationFrame(applyShake);
+                }
+            };
+
+            requestAnimationFrame(applyShake);
         }
     }
 
@@ -1003,6 +2091,63 @@ class ZeldaLikeEngine {
         this.camera.aspect = this.width / this.height;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(this.width, this.height);
+    }
+    
+    // Reset player position if stuck
+    resetPlayerPosition() {
+        // Find a clear position to place the player
+        console.log("Resetting player position due to being stuck");
+        
+        // Try several positions until we find one without collisions
+        const testPositions = [
+            new THREE.Vector3(0, 0.5, 0),
+            new THREE.Vector3(5, 0.5, 5),
+            new THREE.Vector3(-5, 0.5, -5),
+            new THREE.Vector3(10, 0.5, 0),
+            new THREE.Vector3(0, 0.5, 10)
+        ];
+        
+        for (const pos of testPositions) {
+            if (!this.checkCollision(pos)) {
+                // Teleport player to this position
+                this.player.position.copy(pos);
+                console.log("Reset player to position", pos);
+                
+                // Reset velocity and set to ground
+                this.player.velocity.set(0, 0, 0);
+                this.player.onGround = true;
+                
+                // Create a teleport effect
+                this.createFootstepDust(this.player.position.clone(), 3);
+                return true;
+            }
+        }
+        
+        // If no safe position found, move up
+        this.player.position.set(0, 5, 0);
+        this.player.velocity.set(0, 0, 0);
+        console.log("Elevated player to avoid all obstacles");
+        return true;
+    }
+
+    // ENHANCED: Update environment elements for more liveliness
+    updateEnvironment(deltaTime) {
+        // Update grass and foliage (subtle wind animation)
+        this.scene.traverse(object => {
+            if (object.userData && object.userData.type === 'grass') {
+                // Simple wind effect
+                const time = performance.now() * 0.001;
+                const windStrength = 0.03;
+                const windFrequency = 1;
+
+                const windX = Math.sin(time * windFrequency) * windStrength * object.userData.windFactor;
+                const windZ = Math.cos(time * windFrequency * 0.7) * windStrength * object.userData.windFactor;
+
+                // Apply wind rotation
+                object.rotation.x = windX;
+                object.rotation.z = windZ;
+            }
+        });
     }
 
     // Animation loop
@@ -1026,10 +2171,13 @@ class ZeldaLikeEngine {
         // Update collectibles
         this.updateCollectibles(deltaTime);
 
+        // Update environment
+        this.updateEnvironment(deltaTime);
+
         // Update target reticle
         this.updateTargetReticle();
 
-        // Render scene
+        // Render scene with post-processing effects
         this.renderer.render(this.scene, this.camera);
     }
 }
